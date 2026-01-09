@@ -1,0 +1,2 @@
+entry_price,exit_price,type,pnl_pct,pnl_usd,balance,exit_reason,timestamp
+21.519235000000002,22.37368125,SHORT,-79.41232576343896,-397.2695700497711,-347.4695700497711,Stop Loss,2023-01-19 05:45:00
