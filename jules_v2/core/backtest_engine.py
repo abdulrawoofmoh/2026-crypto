@@ -22,7 +22,12 @@ class BacktestEngine:
         self.trades = []
         self.equity_curve = [initial_balance]
 
-    def open_position(self, signal_data, entry_price, stop_loss, take_profit, use_trailing=False, trailing_pct=0.8, timestamp=None):
+    def open_position(self, signal_data, entry_price, stop_loss, take_profit, use_trailing=False, trailing_type='percent', trailing_val=0.0, timestamp=None):
+        """
+        Open Position.
+        trailing_type: 'percent' (default) or 'atr' (Chandelier)
+        trailing_val: The percent (e.g. 0.8) or ATR Multiplier (e.g. 3.0)
+        """
         if self.position is not None or self.balance <= 0: return
 
         signal_type = signal_data['type']
@@ -51,8 +56,12 @@ class BacktestEngine:
             'stop_loss': stop_loss,
             'take_profit': take_profit,
             'use_trailing': use_trailing,
+            'trailing_type': trailing_type,
+            'trailing_val': trailing_val,
             'profit_retracement_pct': self.profit_retracement_pct,
             'highest_unrealized_pnl': 0.0,
+            'highest_price': actual_entry if signal_type == 'LONG' else 0, # For Chandelier
+            'lowest_price': actual_entry if signal_type == 'SHORT' else float('inf'), # For Chandelier
             'scale_ins': 0,
             'confidence_at_entry': confidence
         }
@@ -114,7 +123,8 @@ class BacktestEngine:
             'balance': self.balance,
             'exit_reason': reason,
             'timestamp': timestamp,
-            'scale_ins': self.position['scale_ins']
+            'scale_ins': self.position['scale_ins'],
+            'confidence': self.position['confidence_at_entry']
         })
 
         self.position = None
@@ -141,6 +151,55 @@ class BacktestEngine:
             return True
         return False
 
+    def update_and_check_trailing_stop(self, row):
+        """Handles both Percent and ATR-based (Chandelier) trailing stops"""
+        if not self.position or not self.position.get('use_trailing'):
+            return False
+
+        current_price = row['close']
+        timestamp = row['timestamp']
+
+        # Update Extremes
+        if self.position['type'] == 'LONG':
+            if current_price > self.position['highest_price']:
+                self.position['highest_price'] = current_price
+        else:
+            if current_price < self.position['lowest_price']:
+                self.position['lowest_price'] = current_price
+
+        # Calculate Dynamic Stop Price
+        stop_price = 0.0
+        val = self.position['trailing_val']
+
+        if self.position['trailing_type'] == 'atr':
+            atr = row['atr']
+            if self.position['type'] == 'LONG':
+                # Chandelier Long: Highest High - ATR*Mult
+                stop_price = self.position['highest_price'] - (atr * val)
+                if current_price < stop_price:
+                    self.close_position(stop_price, 'Chandelier Exit', timestamp)
+                    return True
+            else:
+                # Chandelier Short: Lowest Low + ATR*Mult
+                stop_price = self.position['lowest_price'] + (atr * val)
+                if current_price > stop_price:
+                    self.close_position(stop_price, 'Chandelier Exit', timestamp)
+                    return True
+
+        else: # 'percent'
+            if self.position['type'] == 'LONG':
+                stop_price = self.position['highest_price'] * (1 - val/100)
+                if current_price < stop_price:
+                    self.close_position(stop_price, 'Trailing Stop', timestamp)
+                    return True
+            else:
+                stop_price = self.position['lowest_price'] * (1 + val/100)
+                if current_price > stop_price:
+                    self.close_position(stop_price, 'Trailing Stop', timestamp)
+                    return True
+
+        return False
+
     def check_exits(self, row):
         if not self.position: return
 
@@ -149,6 +208,7 @@ class BacktestEngine:
         low = row['low']
         timestamp = row['timestamp']
 
+        # 1. Hard Stops
         if self.position['type'] == 'LONG':
             if low <= self.position['stop_loss']:
                 self.close_position(self.position['stop_loss'], 'Stop Loss', timestamp)
@@ -158,9 +218,15 @@ class BacktestEngine:
                 self.close_position(self.position['stop_loss'], 'Stop Loss', timestamp)
                 return
 
+        # 2. Profit Retracement Trailing (Global Rule)
         if self.check_profit_trailing(current_price, timestamp):
             return
 
+        # 3. Strategy Trailing (Chandelier / Percent)
+        if self.update_and_check_trailing_stop(row):
+            return
+
+        # 4. Take Profit
         if self.position['take_profit']:
             if self.position['type'] == 'LONG' and high >= self.position['take_profit']:
                  self.close_position(self.position['take_profit'], 'Take Profit', timestamp)
@@ -177,11 +243,16 @@ class BacktestEngine:
             if self.position is None and self.balance > 0:
                 signal_data = strategy.generate_signal(df, idx)
                 if signal_data:
+                    # Strategy calculates stops, but for Chandelier we handle trailing dynamically
                     stops = strategy.calculate_stops(df, idx, signal_data)
+
                     self.open_position(
                         signal_data, row['close'], stops['stop_loss'],
-                        stops.get('take_profit'), False,
-                        0.0, row['timestamp']
+                        stops.get('take_profit'),
+                        stops.get('use_trailing', False),
+                        stops.get('trailing_type', 'percent'),
+                        stops.get('trailing_val', 0.0),
+                        row['timestamp']
                     )
             elif self.position and self.balance > 0:
                 if hasattr(strategy, 'check_scale_in'):
@@ -207,7 +278,6 @@ class BacktestEngine:
         return self.calculate_stats()
 
     def calculate_stats(self):
-        """Calculate stats and return robust dictionary"""
         if not self.trades:
             return {
                 'total_trades': 0, 'wins': 0, 'losses': 0,

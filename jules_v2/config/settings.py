@@ -12,8 +12,8 @@ API_CONFIG = {
 TRADING_CONFIG = {
     'symbol': 'SOL/USDT',
     'timeframe': '15m',
-    'leverage': 5,           # OPTIMIZED for 2025 Survival
-    'position_size': 0.05,   # OPTIMIZED for Grid Scaling (5% start)
+    'leverage': 5,           # Conservative
+    'position_size': 0.10,   # Conservative
     'initial_balance': 100,
 }
 
@@ -27,7 +27,16 @@ BACKTEST_CONFIG = {
 
 # RISK MANAGEMENT
 RISK_PARAMS = {
-    'profit_retracement_pct': 0.25, # OPTIMIZED: Looser trailing
+    'profit_retracement_pct': 0.25,
+}
+
+# GOLDEN TRIO STRATEGY PARAMETERS
+GOLDEN_TRIO_PARAMS = {
+    'adx_threshold': 25,
+    'chandelier_mult': 3.0,
+    # Indicators are configured in INDICATOR_PARAMS, but we can override defaults if needed
+    'supertrend_period': 10,
+    'supertrend_multiplier': 3,
 }
 
 # TREND STRATEGY PARAMETERS
@@ -38,7 +47,7 @@ TREND_PARAMS = {
     'stop_loss_atr': 2.0,
 }
 
-# RANGE STRATEGY PARAMETERS (Optimized for Grid)
+# RANGE STRATEGY PARAMETERS
 RANGE_PARAMS = {
     'rsi_period': 14,
     'rsi_oversold': 30,
@@ -46,11 +55,11 @@ RANGE_PARAMS = {
     'bb_period': 20,
     'bb_std': 2,
     'adx_threshold': 20,
-    'stop_loss_atr': 5.0,         # Wide stop for grid
-    'risk_reward_ratio': 0.8,     # Tight profit taking
-    'scale_in_enabled': True,     # ENABLED
-    'max_scale_steps': 5,         # OPTIMIZED
-    'scale_step_atr': 1.5,        # OPTIMIZED
+    'stop_loss_atr': 5.0,
+    'risk_reward_ratio': 0.8,
+    'scale_in_enabled': True,
+    'max_scale_steps': 5,
+    'scale_step_atr': 1.5,
 }
 
 # REGIME DETECTION PARAMETERS
@@ -71,4 +80,7 @@ INDICATOR_PARAMS = {
     'bb_period': 20,
     'bb_std': 2,
     'rsi_period': 14,
+    # Supertrend
+    'supertrend_period': 10,
+    'supertrend_multiplier': 3,
 }
