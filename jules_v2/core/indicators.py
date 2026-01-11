@@ -10,7 +10,11 @@ def add_all_indicators(df, params):
     # Moving Averages
     df['ma_fast'] = df['close'].rolling(window=params.get('ma_fast', 20)).mean()
     df['ma_slow'] = df['close'].rolling(window=params.get('ma_slow', 50)).mean()
+
+    # EMA 200 & Slope
     df['ema_200'] = df['close'].ewm(span=200, adjust=False).mean()
+    # Slope: simple change from previous candle
+    df['ema_200_slope'] = df['ema_200'].diff()
 
     # ATR (Average True Range)
     df['tr'] = np.maximum(
@@ -83,12 +87,8 @@ def calculate_adx(df, period=14):
 
 def calculate_supertrend(df, period=10, multiplier=3):
     """Calculate Supertrend Indicator"""
-    # Calculate ATR for Supertrend if different period needed, but usually we use the common ATR
-    # For correctness with specific period, let's recalc ATR local or rely on df['atr'] if periods match.
-    # We'll compute basic HL2
     hl2 = (df['high'] + df['low']) / 2
 
-    # Re-calculate ATR for supertrend specific period
     tr = np.maximum(
         df['high'] - df['low'],
         np.maximum(
@@ -98,57 +98,49 @@ def calculate_supertrend(df, period=10, multiplier=3):
     )
     atr = tr.rolling(window=period).mean()
 
-    # Basic Bands
     basic_upper = hl2 + (multiplier * atr)
     basic_lower = hl2 - (multiplier * atr)
 
-    # Initialize Final Bands
     final_upper = pd.Series(0.0, index=df.index)
     final_lower = pd.Series(0.0, index=df.index)
     supertrend = pd.Series(0.0, index=df.index)
-    trend = pd.Series(1, index=df.index) # 1: Bullish, -1: Bearish
+    trend = pd.Series(1, index=df.index)
 
-    # Iterative calculation (Supertrend is path-dependent)
-    # Using numpy arrays for speed
     close = df['close'].values
     bu = basic_upper.values
     bl = basic_lower.values
     fu = np.zeros(len(df))
     fl = np.zeros(len(df))
     st = np.zeros(len(df))
-    tr_dir = np.zeros(len(df)) # Trend direction
+    tr_dir = np.zeros(len(df))
 
-    # Start loop
     for i in range(1, len(df)):
-        # Upper Band
         if bu[i] < fu[i-1] or close[i-1] > fu[i-1]:
             fu[i] = bu[i]
         else:
             fu[i] = fu[i-1]
 
-        # Lower Band
         if bl[i] > fl[i-1] or close[i-1] < fl[i-1]:
             fl[i] = bl[i]
         else:
             fl[i] = fl[i-1]
 
-        # Trend
-        if st[i-1] == fu[i-1]: # Previous trend was Bearish (Upper Band active)
+        if st[i-1] == fu[i-1]:
             if close[i] > fu[i]:
-                tr_dir[i] = 1 # Change to Bullish
+                tr_dir[i] = 1
                 st[i] = fl[i]
             else:
-                tr_dir[i] = -1 # Stay Bearish
+                tr_dir[i] = -1
                 st[i] = fu[i]
-        else: # Previous trend was Bullish (Lower Band active)
+        else:
             if close[i] < fl[i]:
-                tr_dir[i] = -1 # Change to Bearish
+                tr_dir[i] = -1
                 st[i] = fu[i]
             else:
-                tr_dir[i] = 1 # Stay Bullish
+                tr_dir[i] = 1
                 st[i] = fl[i]
 
     df['supertrend'] = st
-    df['supertrend_direction'] = tr_dir # 1 = Bullish, -1 = Bearish
+    df['supertrend_direction'] = tr_dir
 
     return df

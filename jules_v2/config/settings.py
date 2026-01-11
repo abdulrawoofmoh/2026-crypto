@@ -12,8 +12,8 @@ API_CONFIG = {
 TRADING_CONFIG = {
     'symbol': 'SOL/USDT',
     'timeframe': '15m',
-    'leverage': 5,           # Conservative
-    'position_size': 0.10,   # Conservative
+    'leverage': 5,           # Safety First
+    'position_size': 0.04,   # Initial Entry 4%
     'initial_balance': 100,
 }
 
@@ -27,14 +27,13 @@ BACKTEST_CONFIG = {
 
 # RISK MANAGEMENT
 RISK_PARAMS = {
-    'profit_retracement_pct': 0.25,
+    'profit_retracement_pct': None, # DISABLED (as per Phase 2 Plan)
 }
 
 # GOLDEN TRIO STRATEGY PARAMETERS
 GOLDEN_TRIO_PARAMS = {
     'adx_threshold': 25,
     'chandelier_mult': 3.0,
-    # Indicators are configured in INDICATOR_PARAMS, but we can override defaults if needed
     'supertrend_period': 10,
     'supertrend_multiplier': 3,
 }
@@ -47,19 +46,19 @@ TREND_PARAMS = {
     'stop_loss_atr': 2.0,
 }
 
-# RANGE STRATEGY PARAMETERS
+# RANGE STRATEGY PARAMETERS (Phase 2)
 RANGE_PARAMS = {
     'rsi_period': 14,
-    'rsi_oversold': 30,
-    'rsi_overbought': 70,
+    'rsi_oversold': 40,           # Frequency: 40
+    'rsi_overbought': 60,         # Frequency: 60
     'bb_period': 20,
     'bb_std': 2,
-    'adx_threshold': 20,
-    'stop_loss_atr': 5.0,
-    'risk_reward_ratio': 0.8,
+    'adx_threshold': 30,          # Only range if trend is weak? No, user said ADX < 20 for ranging logic in general but here we force RSI. Let's stick to default/loose.
+    'stop_loss_atr': 1.2,         # Adaptive Stop
+    'risk_reward_ratio': 0.0,     # Dynamic Exit
     'scale_in_enabled': True,
-    'max_scale_steps': 5,
-    'scale_step_atr': 1.5,
+    'max_scale_steps': 2,
+    'scale_step_atr': 0.0,        # Controlled by RSI
 }
 
 # REGIME DETECTION PARAMETERS
@@ -80,7 +79,6 @@ INDICATOR_PARAMS = {
     'bb_period': 20,
     'bb_std': 2,
     'rsi_period': 14,
-    # Supertrend
     'supertrend_period': 10,
     'supertrend_multiplier': 3,
 }

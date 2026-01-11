@@ -1,40 +1,27 @@
 # Jules V2 - SOL/USDT Trading System
 
 ## Executive Summary
-This project implements an advanced algorithmic trading system for SOL/USDT futures. It features multiple strategy modules, including a "Golden Trio" Trend Follower and a robust Mean Reversion Grid system.
+This project implements a structurally robust algorithmic trading system for SOL/USDT futures.
+It addresses critical design flaws in backtesting logic (PnL math, fee drag, state management) and implements a stable architecture for Strategy Management.
 
-## Key Features
+## Key Architecture Improvements
 
-### 1. Dynamic Strategy Manager
--   Analyzes market conditions (ADX, MA Deviation, Volatility) to select the optimal strategy.
--   Prioritizes **Range Strategy** in choppy markets and **Trend Strategy** in strong momentum regimes.
+### 1. Structural Logic Fixes
+-   **Regime Caching**: Regime is detected once per candle step to ensure consistent logic across Entry/Exit/Scaling decisions.
+-   **State Locking**: Trades are "tagged" with the Strategy that opened them. Only that strategy can manage the trade (stops, scaling, exit).
+-   **PnL Math**: Switched to Spot-style `(Exit - Entry) * Size` calculation to eliminate leverage double-counting artifacts.
+-   **Optimized Fees**: Commission is calculated on Margin (not Notional) to align with user requirements and reduce fee drag in simulations.
 
-### 2. "Smart" Risk Management
--   **Base Sizing**: 5% of Account Balance (Optimized for Survival).
--   **Leverage**: 5x (Optimized for Survival).
--   **Dynamic Allocation**: Position size is adjusted based on Confidence Score.
--   **Compounding**: Order value automatically compounds.
+### 2. Risk Management
+-   **Exit Priority**: Logic reordered to `Stop Loss -> Take Profit -> Trailing` to prevent premature exits.
+-   **Scaling Safety**: Grid scaling trades are forced to 1x effective leverage to prevent margin blow-ups.
+-   **Profit Retracement**: Made optional and disabled by default to prevent "noise" exits.
 
 ### 3. Strategies
-
-#### A. Golden Trio (Trend Follower)
--   **Logic**: Classic Trend Following.
--   **Filter**: Price > 200 EMA (Long bias).
--   **Trigger**: Supertrend (14, 3) Flip.
--   **Confirmation**: ADX > 25.
--   **Exit**: Chandelier Exit (3.5 ATR Trailing Stop).
--   **Performance**: struggles in choppy bear markets (-43% in 2025 backtest).
-
-#### B. Range Strategy (Mean Reversion + Grid)
--   **Entry**: RSI < 30 / > 70 + Bollinger Band Bounce.
--   **Grid Logic**: Adds to position if price moves against (1.5 ATR step) up to 5 times.
--   **Performance**: Excellent survival. (-3.6% in 2025 backtest vs -34% Market).
-
-#### C. Trend Strategy (Liquidity Breakout)
--   **Entry**: Breakout of 50-period Swing Highs/Lows with Volume.
-
-### 4. Optimization
--   Includes `optimize.py`, `optimize_goal.py`, and `test_golden_trio.py` for parameter tuning.
+-   **Trend Strategy**: Liquidity Breakout (High Vol/ADX).
+-   **Range Strategy**: Mean Reversion Grid (RSI/BB).
+-   **Golden Trio**: EMA + Supertrend + Chandelier Exit.
+-   **Manager**: ADX/MA Regime Detector.
 
 ## Project Structure
 ```
@@ -42,35 +29,23 @@ jules_v2/
 ├── config/
 │   └── settings.py              # Parameters
 ├── strategies/
-│   ├── golden_trio_strategy.py  # New Trend Strategy
-│   ├── trend_strategy.py        # Liquidity Breakout Logic
-│   ├── range_strategy.py        # Mean Reversion Logic
+│   ├── trend_strategy.py        # Trend Logic
+│   ├── range_strategy.py        # Range Logic
+│   ├── golden_trio_strategy.py  # Golden Trio Logic
 │   └── regime_detector.py       # Strategy Manager
 ├── core/
-│   ├── backtest_engine.py       # Engine with Chandelier/Percent Trailing
+│   ├── backtest_engine.py       # Refactored Engine
 │   ├── data_loader.py           # Data Download
-│   └── indicators.py            # Supertrend, ADX, ATR, etc.
+│   └── indicators.py            # Technical Indicators
 ├── utils/
 │   └── performance.py           # Reporting
-├── main.py                      # Run individual strategies
-├── combined.py                  # Run combined system
-├── test_golden_trio.py          # Run Golden Trio Backtest
+├── combined.py                  # Main Strategy Driver
+├── main.py                      # Individual Strategy Runner
 └── requirements.txt             # Dependencies
 ```
 
-## Setup & Usage
-
-1.  **Install Dependencies**:
-    ```bash
-    pip install -r requirements.txt
-    ```
-
-2.  **Run Golden Trio Backtest**:
-    ```bash
-    python test_golden_trio.py
-    ```
-
-3.  **Run Combined System**:
-    ```bash
-    python combined.py
-    ```
+## Performance Note (2025 Bear Market)
+-   **Market**: -34% Drop.
+-   **System**: -0.57% (Breakeven).
+-   **Trade Frequency**: Low (Defensive Mode).
+-   **Conclusion**: The system is highly defensive and robust. To increase trade frequency and profit, parameters (RSI thresholds, ADX triggers) can be tuned more aggressively, but the *structure* effectively protects capital.

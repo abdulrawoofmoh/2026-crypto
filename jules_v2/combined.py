@@ -1,4 +1,4 @@
-"""Combined strategy with Strategy Manager"""
+"""Combined strategy with Strategy Manager and State Awareness"""
 
 import logging
 from config.settings import *
@@ -7,59 +7,82 @@ from core.indicators import add_all_indicators
 from core.backtest_engine import BacktestEngine
 from strategies.trend_strategy import TrendStrategy
 from strategies.range_strategy import RangeStrategy
+from strategies.golden_trio_strategy import GoldenTrioStrategy
 from strategies.regime_detector import StrategyManager
 from utils.performance import print_results, save_results
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 class CombinedStrategy:
-    """Combined strategy with regime switching"""
+    """Combined strategy with regime switching and state locking"""
 
     def __init__(self, trend_strategy, range_strategy, manager):
         self.trend_strategy = trend_strategy
         self.range_strategy = range_strategy
         self.manager = manager
+        # Cache for current step
+        self.current_regime = None
+
+    def prepare_step(self, df, idx):
+        """Calculate and cache regime for this step"""
+        self.current_regime = self.manager.detect_regime(df, idx)
 
     def generate_signal(self, df, idx):
-        """Generate signal based on regime"""
-        regime = self.manager.detect_regime(df, idx)
+        """Generate signal based on cached regime"""
+        # Ensure prepare_step was called, or call it
+        if self.current_regime is None:
+            self.prepare_step(df, idx)
+
+        regime = self.current_regime
+        signal = None
+        strategy_name = None
 
         if regime == 'TRENDING':
-            return self.trend_strategy.generate_signal(df, idx)
+            signal = self.trend_strategy.generate_signal(df, idx)
+            strategy_name = 'TREND'
         elif regime == 'RANGING':
-            return self.range_strategy.generate_signal(df, idx)
-        return None
+            signal = self.range_strategy.generate_signal(df, idx)
+            strategy_name = 'RANGE'
+
+        if signal:
+            # Tag the signal with the strategy name for locking
+            signal['strategy'] = strategy_name
+            signal['regime'] = regime
+
+        return signal
 
     def calculate_stops(self, df, idx, signal_data):
-        """Calculate stops based on regime"""
-        regime = self.manager.detect_regime(df, idx)
+        """Calculate stops using the strategy that generated the signal"""
+        strategy_name = signal_data.get('strategy')
 
-        if regime == 'TRENDING':
+        if strategy_name == 'TREND':
             return self.trend_strategy.calculate_stops(df, idx, signal_data)
-        else:
+        elif strategy_name == 'RANGE':
             return self.range_strategy.calculate_stops(df, idx, signal_data)
+
+        # Fallback if no strategy tag (shouldn't happen with new engine)
+        return self.range_strategy.calculate_stops(df, idx, signal_data)
 
     def check_scale_in(self, df, idx, position):
         """
-        Check for scaling based on active strategy logic (Regime-dependent).
-        This delegates the 'Grid' capability to the underlying strategies.
+        Check for scaling using the strategy that OWNS the position.
+        Ignores current regime.
         """
-        regime = self.manager.detect_regime(df, idx)
+        strategy_name = position.get('strategy')
 
-        if regime == 'TRENDING':
-             # Trend strategy typically doesn't scale, but check just in case
+        if strategy_name == 'TREND':
              if hasattr(self.trend_strategy, 'check_scale_in'):
                  return self.trend_strategy.check_scale_in(df, idx, position)
-        elif regime == 'RANGING':
-             # Range strategy definitely uses scaling (Grid Logic)
+        elif strategy_name == 'RANGE':
              if hasattr(self.range_strategy, 'check_scale_in'):
                  return self.range_strategy.check_scale_in(df, idx, position)
+
         return None
 
 def test_combined_strategy():
     """Test combined strategy"""
     print("\n" + "="*60)
-    print("TESTING COMBINED STRATEGY")
+    print("TESTING COMBINED STRATEGY (Fixed Architecture)")
     print("="*60)
 
     loader = DataLoader()
@@ -78,20 +101,15 @@ def test_combined_strategy():
     range_strategy = RangeStrategy(RANGE_PARAMS)
     manager = StrategyManager(REGIME_PARAMS)
 
-    # Just for statistics, print regime distribution
-    df_regime = manager.add_regime_column(df.copy())
-    regime_counts = df_regime['regime'].value_counts()
-    print(f"\nMarket Regime Distribution:")
-    for regime, count in regime_counts.items():
-        pct = (count / len(df)) * 100
-        print(f"  {regime:12s}: {count:6d} ({pct:5.1f}%)")
-
     combined = CombinedStrategy(trend_strategy, range_strategy, manager)
 
     engine = BacktestEngine(
-        TRADING_CONFIG['initial_balance'], TRADING_CONFIG['leverage'],
-        TRADING_CONFIG['position_size'], BACKTEST_CONFIG['commission'],
-        BACKTEST_CONFIG['slippage']
+        TRADING_CONFIG['initial_balance'],
+        TRADING_CONFIG['leverage'],
+        TRADING_CONFIG['position_size'],
+        BACKTEST_CONFIG['commission'],
+        BACKTEST_CONFIG['slippage'],
+        profit_retracement_pct=None # DISABLED as per recommendation
     )
 
     results = engine.run(df, combined)
